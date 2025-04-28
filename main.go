@@ -1,34 +1,49 @@
 package main
 
 import (
+	"flag"
 	"log"
+	"net"
 	"net/http"
 
 	"load_balancer/balancer"
 	"load_balancer/config"
-	"load_balancer/limiter"
+	"load_balancer/ratelimiter"
 )
 
 func main() {
-	cfg, err := config.LoadConfig("config.json")
+	configPath := flag.String("config", "config.yaml", "Path to config file")
+	flag.Parse()
+
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	b := balancer.NewBalancer(cfg.Backends)
-	l := limiter.NewLimiter(10, 5) // 10 токенов, пополнение 5 токенов в секунду
+	bal := balancer.NewBalancer(cfg.Backends)
+
+	limiter := ratelimiter.NewRateLimiter(cfg.DefaultRateLimit.Capacity, cfg.DefaultRateLimit.RefillRate)
+	for ip, limit := range cfg.RateLimits {
+		limiter.SetClientLimit(ip, limit.Capacity, limit.RefillRate)
+	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		clientID := limiter.GetClientIP(r)
-		if !l.Allow(clientID) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			log.Printf("Error parsing RemoteAddr %v, using full address", r.RemoteAddr)
+			ip = r.RemoteAddr
+		}
+
+		if !limiter.Allow(ip) {
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			log.Printf("Rate limit exceeded for %s", clientID)
+			log.Printf("Rate limit exceeded for %s", ip)
 			return
 		}
-		b.ServeHTTP(w, r)
+
+		bal.ServeHTTP(w, r)
 	})
 
-	log.Printf("Starting load balancer on port %s", cfg.Port)
+	log.Printf("Starting server on port %s", cfg.Port)
 	err = http.ListenAndServe(":"+cfg.Port, nil)
 	if err != nil {
 		log.Fatalf("Server failed: %v", err)

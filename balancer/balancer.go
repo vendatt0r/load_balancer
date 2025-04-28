@@ -10,41 +10,43 @@ import (
 
 type Balancer struct {
 	backends []*url.URL
+	index    int
 	mu       sync.Mutex
-	current  int
 }
 
-func NewBalancer(backendURLs []string) *Balancer {
-	backends := make([]*url.URL, 0, len(backendURLs))
-	for _, addr := range backendURLs {
+func NewBalancer(backendUrls []string) *Balancer {
+	var urls []*url.URL
+	for _, addr := range backendUrls {
 		parsed, err := url.Parse(addr)
 		if err != nil {
-			log.Fatalf("Invalid backend URL %s: %v", addr, err)
+			log.Fatalf("Invalid backend URL: %s", addr)
 		}
-		backends = append(backends, parsed)
+		urls = append(urls, parsed)
 	}
-	return &Balancer{
-		backends: backends,
-	}
+	return &Balancer{backends: urls}
 }
 
-func (b *Balancer) getNextBackend() *url.URL {
+func (b *Balancer) NextBackend() *url.URL {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	backend := b.backends[b.current]
-	b.current = (b.current + 1) % len(b.backends)
+
+	if len(b.backends) == 0 {
+		return nil
+	}
+
+	backend := b.backends[b.index]
+	b.index = (b.index + 1) % len(b.backends)
 	return backend
 }
 
 func (b *Balancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	backend := b.getNextBackend()
-
-	proxy := httputil.NewSingleHostReverseProxy(backend)
-	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
-		log.Printf("Backend %s unavailable: %v", backend, err)
-		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+	backend := b.NextBackend()
+	if backend == nil {
+		http.Error(w, "No available backend", http.StatusServiceUnavailable)
+		return
 	}
 
-	log.Printf("Forwarding request %s to %s", r.URL.Path, backend)
+	proxy := httputil.NewSingleHostReverseProxy(backend)
+	log.Printf("Forwarding request %s %s to backend %s", r.Method, r.URL.Path, backend.Host)
 	proxy.ServeHTTP(w, r)
 }

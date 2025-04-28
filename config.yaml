@@ -1,0 +1,11 @@
+port: "8080"
+backends:
+  - "http://localhost:9001"
+  - "http://localhost:9002"
+rate_limits:
+  "127.0.0.1":
+    capacity: 20
+    refill_rate: 5
+  "::1":
+    capacity: 20
+    refill_rate: 5
