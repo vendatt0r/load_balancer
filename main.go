@@ -28,15 +28,16 @@ func main() {
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
-			log.Printf("Error parsing RemoteAddr %v, using full address", r.RemoteAddr)
-			ip = r.RemoteAddr
+			host = r.RemoteAddr
 		}
 
-		if !limiter.Allow(ip) {
+		log.Printf("Incoming request from %s: %s %s", host, r.Method, r.URL.Path)
+
+		if !limiter.Allow(host) {
 			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			log.Printf("Rate limit exceeded for %s", ip)
+			log.Printf("Rate limit exceeded for %s", host)
 			return
 		}
 
