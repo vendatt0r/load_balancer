@@ -1,7 +1,7 @@
 FROM golang:1.24 AS builder
 
-
-RUN apk add --no-cache git
+# Установим git через apt, не apk
+RUN apt-get update && apt-get install -y git
 
 WORKDIR /app
 
@@ -10,8 +10,15 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o load_balancer .
+RUN go build -o load_balancer main.go
 
-EXPOSE 8080
+# Финальный образ
+FROM debian:bookworm-slim
 
-CMD ["./load_balancer"]
+WORKDIR /app
+
+COPY --from=builder /app/load_balancer .
+
+COPY config.yaml .
+
+CMD ["./load_balancer", "--config=config.yaml"]
