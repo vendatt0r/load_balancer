@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  load_balancer:
+    build: .
+    container_name: load_balancer
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - db
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+    restart: unless-stopped
+
+  db:
+    image: postgres:15
+    container_name: load_balancer_db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: rate_limiter
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  pg_data:
